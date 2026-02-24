@@ -2,21 +2,18 @@ import chalk from 'chalk';
 import os from 'node:os';
 import type { ScanSummary, Finding, RiskLevel } from '../types.js';
 
-// ── Spinner ──────────────────────────────────────────────────────────────────
+// ── Spinner ───────────────────────────────────────────────────────────────────
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 export class Spinner {
   private frame = 0;
   private interval: ReturnType<typeof setInterval> | null = null;
-  private message: string;
 
-  constructor(message: string) {
-    this.message = message;
-  }
+  constructor(private message: string) {}
 
   start() {
-    process.stdout.write('\x1B[?25l'); // hide cursor
+    process.stdout.write('\x1B[?25l');
     this.interval = setInterval(() => {
       process.stdout.write(`\r  ${chalk.cyan(SPINNER_FRAMES[this.frame])}  ${chalk.dim(this.message)}`);
       this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
@@ -24,160 +21,120 @@ export class Spinner {
     return this;
   }
 
-  stop(finalMessage?: string) {
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
-    }
-    process.stdout.write('\r\x1B[2K'); // clear line
-    process.stdout.write('\x1B[?25h'); // show cursor
-    if (finalMessage) console.log(finalMessage);
+  stop() {
+    if (this.interval) { clearInterval(this.interval); this.interval = null; }
+    process.stdout.write('\r\x1B[2K');
+    process.stdout.write('\x1B[?25h');
   }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const shortenPath = (p: string) => p.replace(os.homedir(), '~');
+const home = os.homedir();
+const shorten = (p: string) => p.replace(home, '~');
 
-const riskColor = (level: RiskLevel) => {
-  switch (level) {
-    case 'high':   return chalk.red.bold;
-    case 'medium': return chalk.yellow;
-    case 'low':    return chalk.blue;
-    default:       return chalk.dim;
+const BADGE: Record<RiskLevel, string> = {
+  high:   chalk.red.bold('HIGH'),
+  medium: chalk.yellow('MED '),
+  low:    chalk.dim('LOW '),
+  info:   chalk.dim('INFO'),
+};
+
+// Pull specific context from the finding to append to the title
+// e.g. "MCP server registered" → "MCP server: filesystem-mcp"
+const contextualTitle = (f: Finding): string => {
+  const val = typeof f.permission.rawValue === 'string' ? f.permission.rawValue : null;
+  const key = f.permission.rawKey;
+
+  if (f.ruleId === 'MCP_SERVER_REGISTERED') {
+    const name = key.split('.').pop() ?? val ?? '';
+    return `MCP server: ${name}`;
   }
-};
-
-const riskBadge = (level: RiskLevel) => {
-  switch (level) {
-    case 'high':   return chalk.bgRed.white.bold(` HIGH `);
-    case 'medium': return chalk.bgYellow.black.bold(` MED  `);
-    case 'low':    return chalk.bgBlue.white(` LOW  `);
-    default:       return chalk.bgGray.white(` INFO `);
+  if (f.ruleId === 'SHELL_RESTRICTED_ALWAYS' && f.permission.constraints[0]) {
+    return f.permission.constraints[0];
   }
+  if (f.ruleId === 'TOOL_ALWAYS_ALLOWED' && val) {
+    return `Permanently allowed: ${val}`;
+  }
+  if ((f.ruleId === 'TRUSTED_DIR_GLOBAL' || f.ruleId === 'SENSITIVE_PATH_TRUSTED') && val) {
+    return `Trusted path: ${val}`;
+  }
+  if (f.ruleId === 'SECRETS_IN_MCP_ENV') {
+    const envKey = key.split('.').pop() ?? '';
+    return `Hardcoded secret: ${envKey}`;
+  }
+  return f.title;
 };
 
-const scoreBar = (score: number): string => {
-  const filled = Math.round(score / 10 * 6);
-  const bar = '█'.repeat(filled) + '░'.repeat(6 - filled);
-  const color = score >= 7 ? chalk.red : score >= 4 ? chalk.yellow : chalk.blue;
-  return color(bar) + chalk.dim(` ${score}/10`);
-};
+const renderFinding = (f: Finding) => {
+  const badge  = BADGE[f.riskLevel];
+  const title  = chalk.white.bold(contextualTitle(f));
+  const agent  = chalk.dim(`${f.agentLabel} · ${shorten(f.configPath)}`);
+  const indent = '        ';
 
-const renderFinding = (f: Finding, index: number) => {
-  const color = riskColor(f.riskLevel);
-  console.log(
-    `  ${chalk.dim(`${index}.`)} ${riskBadge(f.riskLevel)}  ${chalk.white.bold(f.title)}`
-  );
-  console.log(
-    `     ${chalk.dim('risk score')} ${scoreBar(f.score)}`
-  );
-  console.log(
-    `     ${chalk.dim(f.description)}`
-  );
-  console.log(
-    `     ${chalk.cyan('→')} ${f.remediation}`
-  );
-  console.log(
-    `     ${chalk.dim(`id: ${f.id}`)}`
-  );
+  console.log(`  ${badge}  ${title}`);
+  console.log(`${indent}${chalk.dim(f.permission.rawKey)}  ${agent}`);
+  console.log(`${indent}${chalk.dim(f.summary)}`);
+  console.log(`${indent}${chalk.cyan('→')} ${f.remediation}`);
   console.log();
 };
 
-// ── Main renderer ─────────────────────────────────────────────────────────────
+// ── Main export ───────────────────────────────────────────────────────────────
 
-export const renderFindings = (summary: ScanSummary, options: { quiet?: boolean; verbose?: boolean } = {}): void => {
+export const renderFindings = (summary: ScanSummary, options: { quiet?: boolean } = {}): void => {
   const { stats } = summary;
 
-  // Header
-  console.log();
-  console.log(`  ${chalk.bold('baymax')}  ${chalk.dim(`AI agent permission scanner`)}`);
   console.log();
 
-  // Nothing detected
+  // Nothing detected at all
   if (summary.agentsDetected.length === 0) {
     console.log(chalk.dim('  No supported AI agent configs detected.'));
     console.log();
-    _renderFooter(summary);
+    renderFooter(summary);
     return;
   }
+
+  const visible = [...summary.findings]
+    .filter(f => !options.quiet || f.riskLevel === 'high')
+    .sort((a, b) => {
+      const order: Record<RiskLevel, number> = { high: 0, medium: 1, low: 2, info: 3 };
+      return order[a.riskLevel] - order[b.riskLevel] || b.score - a.score;
+    });
 
   // All clear
-  if (summary.findings.length === 0 || (options.quiet && summary.highCount === 0)) {
-    console.log(`  ${chalk.green('✓')} ${chalk.green.bold('All clear.')} ${chalk.dim('No risky permissions found across')} ${chalk.white(summary.agentsDetected.length)} ${chalk.dim('agents.')}`);
+  if (visible.length === 0) {
+    const agentList = summary.agentsDetected.join(', ');
+    console.log(`  ${chalk.green('✓')}  ${chalk.green.bold('All clear')}  ${chalk.dim(`— no risky permissions across ${agentList}`)}`);
     console.log();
-    _renderFooter(summary);
+    renderFooter(summary);
     return;
   }
 
-  // Sort: high first, then by score desc
-  const riskOrder: Record<RiskLevel, number> = { high: 0, medium: 1, low: 2, info: 3 };
-  const sortedFindings = [...summary.findings]
-    .filter(f => !options.quiet || f.riskLevel === 'high')
-    .sort((a, b) => riskOrder[a.riskLevel] - riskOrder[b.riskLevel] || b.score - a.score);
-
-  // Group by projectDir + agentLabel
-  type Group = { projectDir: string; agentLabel: string; configPath: string; findings: Finding[] };
-  const groups = new Map<string, Group>();
-  for (const f of sortedFindings) {
-    const key = `${f.projectDir}::${f.agentLabel}::${f.configPath}`;
-    if (!groups.has(key)) {
-      groups.set(key, { projectDir: f.projectDir, agentLabel: f.agentLabel, configPath: f.configPath, findings: [] });
-    }
-    groups.get(key)!.findings.push(f);
-  }
-
-  // Track current project for section headers
+  // Project header only when scanning multiple projects
   let lastProject = '';
-  let findingIndex = 1;
-
-  for (const group of groups.values()) {
-    const relProject = group.projectDir === process.cwd()
-      ? chalk.dim('(current directory)')
-      : chalk.dim(shortenPath(group.projectDir));
-
-    // Project header (only when it changes)
-    if (stats.projectsScanned > 1 && group.projectDir !== lastProject) {
-      console.log(`  ${chalk.bold.underline(shortenPath(group.projectDir))}`);
-      lastProject = group.projectDir;
+  for (const f of visible) {
+    if (stats.projectsScanned > 1 && f.projectDir !== lastProject) {
+      console.log(`  ${chalk.bold.underline(shorten(f.projectDir))}`);
+      console.log();
+      lastProject = f.projectDir;
     }
-
-    // Agent sub-header
-    console.log(
-      `  ${chalk.bold(group.agentLabel)}` +
-      `  ${chalk.dim('·')}  ${chalk.dim(shortenPath(group.configPath))}`
-    );
-    console.log(`  ${chalk.dim('─'.repeat(62))}`);
-    console.log();
-
-    for (const f of group.findings) {
-      renderFinding(f, findingIndex++);
-    }
+    renderFinding(f);
   }
 
-  _renderFooter(summary, options);
+  renderFooter(summary);
 };
 
-const _renderFooter = (summary: ScanSummary, options: { quiet?: boolean } = {}) => {
+const renderFooter = (summary: ScanSummary) => {
   const { stats } = summary;
-  const high   = summary.highCount   > 0 ? chalk.red.bold(`${summary.highCount} high`)     : chalk.dim(`${summary.highCount} high`);
-  const medium = summary.mediumCount > 0 ? chalk.yellow(`${summary.mediumCount} medium`)  : chalk.dim(`${summary.mediumCount} medium`);
-  const low    = summary.lowCount    > 0 ? chalk.blue(`${summary.lowCount} low`)           : chalk.dim(`${summary.lowCount} low`);
 
-  const duration = stats.durationMs < 1000
-    ? chalk.dim(`${stats.durationMs}ms`)
-    : chalk.dim(`${(stats.durationMs / 1000).toFixed(1)}s`);
-
-  const projectsInfo = stats.projectsScanned > 1
+  const high   = summary.highCount   > 0 ? chalk.red.bold(`${summary.highCount} high`)   : chalk.dim(`${summary.highCount} high`);
+  const medium = summary.mediumCount > 0 ? chalk.yellow(`${summary.mediumCount} medium`) : chalk.dim(`${summary.mediumCount} medium`);
+  const low    = summary.lowCount    > 0 ? chalk.dim(`${summary.lowCount} low`)           : chalk.dim(`${summary.lowCount} low`);
+  const dur    = chalk.dim(stats.durationMs < 1000 ? `${stats.durationMs}ms` : `${(stats.durationMs / 1000).toFixed(1)}s`);
+  const scope  = stats.projectsScanned > 1
     ? chalk.dim(`${stats.projectsScanned} projects`)
-    : chalk.dim(`${summary.agentsDetected.length} agent${summary.agentsDetected.length !== 1 ? 's' : ''} detected`);
+    : chalk.dim(`${summary.agentsDetected.length} agent${summary.agentsDetected.length !== 1 ? 's' : ''}`);
 
-  console.log(`  ${high}  ${chalk.dim('·')}  ${medium}  ${chalk.dim('·')}  ${low}    ${duration}  ${chalk.dim('·')}  ${projectsInfo}`);
-
-  if (summary.highCount > 0 || summary.mediumCount > 0) {
-    console.log();
-    console.log(`  ${chalk.dim('run')}  ${chalk.cyan('baymax explain <id>')}  ${chalk.dim('for full detail and remediation')}`);
-  }
-
+  console.log(`  ${high}  ${chalk.dim('·')}  ${medium}  ${chalk.dim('·')}  ${low}  ${chalk.dim('·')}  ${dur}  ${chalk.dim('·')}  ${scope}`);
   console.log();
 };

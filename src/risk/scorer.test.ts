@@ -18,6 +18,7 @@ const makeFinding = (riskLevel: Finding['riskLevel'], id = 'test-id'): Finding =
   riskLevel,
   score: 5,
   ruleId: 'SHELL_UNRESTRICTED_ALWAYS',
+  summary: 'Test summary',
   title: 'Test',
   description: 'Test description',
   remediation: 'Test remediation',

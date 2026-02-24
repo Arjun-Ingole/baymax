@@ -33,7 +33,8 @@ export interface Finding {
   score: number;        // 1–10 severity score
   ruleId: string;
   title: string;
-  description: string;
+  summary: string;      // tight one-liner for terminal
+  description: string;  // full prose for JSON / Markdown
   remediation: string;
 }
 

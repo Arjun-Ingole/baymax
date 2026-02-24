@@ -5,7 +5,8 @@ export interface ClassifiedFinding {
   riskLevel: RiskLevel;
   score: number;
   title: string;
-  description: string;
+  summary: string;       // tight one-liner for terminal
+  description: string;   // full prose for JSON / Markdown
   remediation: string;
 }
 
@@ -29,6 +30,7 @@ export const classifyFinding = (
       riskLevel: 'info',
       score: 1,
       title: 'Unknown permission',
+      summary: `Unrecognized permission at key: ${permission.rawKey}`,
       description: `Unrecognized permission at key: ${permission.rawKey}`,
       remediation: 'Review this configuration key manually.',
     };
@@ -60,6 +62,7 @@ export const classifyFinding = (
     riskLevel,
     score,
     title: rule.title,
+    summary: rule.summary,
     description: rule.description,
     remediation: rule.remediation,
   };
