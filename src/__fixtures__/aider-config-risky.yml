@@ -1,0 +1,4 @@
+yes: true
+auto-commits: true
+shell: true
+model: gpt-4

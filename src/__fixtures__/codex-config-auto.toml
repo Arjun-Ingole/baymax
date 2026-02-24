@@ -1,0 +1,4 @@
+approval_policy = "auto"
+
+[sandbox]
+enabled = false

@@ -1,0 +1,7 @@
+{
+  "trustedFolders": ["/Users/arjun", "/tmp/project"],
+  "sandboxEnabled": false,
+  "mcpServers": {
+    "shell-server": {}
+  }
+}
