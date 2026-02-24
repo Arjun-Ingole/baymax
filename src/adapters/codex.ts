@@ -28,7 +28,7 @@ const extractFindings = (config: z.infer<typeof CodexConfigSchema>, configPath: 
   const findings: Finding[] = [];
 
   if (config.approval_policy === 'auto' || config.full_auto === true) {
-    const ruleId = config.full_auto ? 'APPROVAL_POLICY_AUTO' : 'APPROVAL_POLICY_AUTO';
+    const ruleId = 'APPROVAL_POLICY_AUTO';
     const permission: NormalizedPermission = {
       capability: 'shell',
       scope: 'global',

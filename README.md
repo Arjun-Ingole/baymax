@@ -1,21 +1,22 @@
 # Baymax
 
-A local CLI that scans AI coding agent configs for dangerous "always allow" permissions and warns before they become silent long-term risk.
+A local CLI that scans AI coding agent configs for dangerous "always allow" permissions — before they become silent long-term risk.
 
 ```
-  Baymax  v1.0.0  ·  AI agent permission scanner
+  ╭────────╮   baymax  v1.0.0
+  │  ·  ·  │   AI agent permission scanner
+  │  ────  │   ███████████░░░░░░░░░  57/100
+  ╰────────╯   stay alert
 
-  Claude Code  ·  ~/.claude/settings.json
-  ────────────────────────────────────────────────────────────
-  ! [HIGH]   Unrestricted shell execution always allowed
-             Bash(*) permanently allowed — any command runs without confirmation.
-             → Remove "Bash" from allowedTools. Use "Bash(npm run *)" instead.
-             ID: claude-code::allowedtools::bash
+   Claude Code   ~/.claude/settings.local.json
 
-  ┌────────────────────────────────────┐
-  │  1 high  ·  0 medium  ·  0 low    │
-  │  3 agents detected, 3 scanned     │
-  └────────────────────────────────────┘
+  MED   Bash(cat:*)
+       cat — reads any file — can expose .env files, SSH keys, tokens in your project
+
+  MED   Bash(git add:*)
+       git add — stages files for commit — can include .env or secrets before anyone reviews
+
+  0 high  ·  2 medium  ·  0 low  ·  12ms  ·  1 agent  ·  14:32:01
 ```
 
 ## Problem
@@ -26,9 +27,9 @@ Modern coding agents reduce friction with "Allow always" buttons. Developers cli
 
 | Agent | What it checks |
 |-------|---------------|
-| **Claude Code** | `allowedTools` (Bash/Bash(*)), registered MCP servers |
+| **Claude Code** | `allowedTools` (Bash, Bash(*), tool entries), `permissions.allow`, MCP servers + secrets in env |
 | **Cursor** | `permissions.allow`, `trustedPaths` |
-| **Codex CLI** | `approval_policy: auto`, `sandbox.enabled: false` |
+| **Codex CLI** | `approval_policy: auto`, `full_auto: true`, `sandbox.enabled: false` |
 | **Gemini CLI** | `trustedFolders`, `sandboxEnabled: false`, MCP servers |
 | **GitHub Copilot** | `permanentlyTrustedDirectories`, `networkAccess: true` |
 | **Aider** | `yes: true`, `auto-commits: true`, `shell: true` |
@@ -36,7 +37,6 @@ Modern coding agents reduce friction with "Allow always" buttons. Developers cli
 ## Install
 
 ```bash
-# From source
 git clone <repo>
 cd baymax
 npm install && npm run build
@@ -46,22 +46,25 @@ npm link          # makes `baymax` available globally
 ## Usage
 
 ```bash
-# Scan current directory + global agent configs
+# Scan current directory (+ global agent configs like ~/.claude/settings.json)
 baymax scan .
 
 # Scan a specific project
 baymax scan ~/projects/myapp
 
-# Machine-readable output (exit 1 if high findings)
-baymax scan . --json
+# Recursively scan subdirectories up to depth 3
+baymax scan . --depth 3
 
-# High-risk findings only
+# High-risk findings only (quiet mode)
 baymax scan . --quiet
 
-# Full detail and remediation for a specific finding
-baymax explain claude-code::allowedtools::bash
+# Machine-readable JSON output (exits 1 if any high findings — useful in CI)
+baymax scan . --json
 
-# Export Markdown audit report
+# Interactively fix risky permissions in-place
+baymax fix .
+
+# Export a Markdown audit report
 baymax export --md --output ./security-report.md
 ```
 
@@ -69,18 +72,29 @@ baymax export --md --output ./security-report.md
 
 | Level | Meaning | Example |
 |-------|---------|---------|
-| **HIGH** | Immediate concern, mitigate now | Unrestricted Bash, sandbox disabled, auto-approve all |
-| **MEDIUM** | Review and consider scoping | Restricted shell patterns, MCP servers, auto-commits |
-| **LOW** | Noted, likely acceptable | Tool permanently allowed (non-shell) |
+| **HIGH** | Immediate concern — mitigate now | Unrestricted Bash, sandbox disabled, auto-approve all |
+| **MEDIUM** | Review and consider scoping | Known-risky commands permanently allowed (node, python, git, curl…) |
+| **LOW** | Noted, likely acceptable | Specific tools or unknown commands permanently allowed |
 
 **Risk escalation:** Medium findings are elevated to High when `persistence=always` AND `scope=global`.
+
+**Smart tiering:** Restricted shell patterns like `Bash(sqlite3:*)` or `Bash(npx standard:*)` are classified LOW rather than MED — only commands with known-risky capabilities (code execution, filesystem traversal, network, git) stay at MED.
+
+## Fix command
+
+`baymax fix` runs a scan then opens an interactive checkbox:
+
+- High and medium findings are **pre-checked**
+- Low findings are **unchecked** by default
+- Select with `Space`, confirm with `Enter`
+- Fixes are applied in-place to the config files (removes array entries, toggles booleans)
 
 ## CI integration
 
 `baymax scan` exits with code `1` when any high-risk findings are detected:
 
 ```yaml
-# GitHub Actions example
+# GitHub Actions
 - name: Audit agent permissions
   run: baymax scan .
 ```
@@ -88,13 +102,35 @@ baymax export --md --output ./security-report.md
 ## Development
 
 ```bash
-npm run build          # compile TypeScript
-npm test               # run 80 tests
+npm run build          # compile TypeScript → dist/
+npm test               # run 88 tests across 10 test files
 npm run test:watch     # watch mode
 npm run test:coverage  # coverage report
 ```
 
-See [CLAUDE.md](./CLAUDE.md) for architecture details and how to add new adapters.
+### Adding a new agent adapter
+
+1. Create `src/adapters/<agent-id>.ts` — implement `detect(projectDir)` and `scan(projectDir)`
+2. Register it in `src/adapters/index.ts`
+3. Add fixture files under `src/__fixtures__/`
+4. Add tests in `src/adapters/<agent-id>.test.ts`
+
+See any existing adapter (e.g. `claude-code.ts`) as the reference implementation. Each adapter normalizes its config into `NormalizedPermission` objects and calls `classifyFinding()` to get risk level + score.
+
+## Architecture
+
+```
+cli.ts                  → Commander commands (scan, fix, export)
+scan.ts                 → Orchestrator: discover projects → run adapters → deduplicate
+adapters/               → One file per agent, each implementing AgentAdapter
+risk/rules.ts           → Rule registry: ruleId → title, description, remediation, baseScore
+risk/classifier.ts      → classifyFinding(): permission + ruleId → RiskLevel + score
+risk/scorer.ts          → buildSummary(): aggregate findings into ScanSummary
+output/renderer.ts      → Terminal output with mascot, safety score bar, agent badges
+output/json-reporter.ts → --json output
+output/markdown-reporter.ts → export --md
+fix/index.ts            → Interactive fix command
+```
 
 ## Philosophy
 

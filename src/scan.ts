@@ -78,7 +78,7 @@ export const runScan = async (options: ScanOptions): Promise<ScanSummary> => {
       configsChecked++;
       try {
         const findings = await adapter.scan(dir);
-        if (findings.length >= 0) configsFound++; // adapter successfully ran
+        configsFound++; // adapter ran without throwing
         allFindings.push(...findings);
         agentsScannedSet.add(adapter.agentId);
       } catch (err) {

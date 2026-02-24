@@ -73,8 +73,6 @@ const extractFindings = (settings: z.infer<typeof ClaudeSettingsSchema>, configP
     // skip if already caught by allowedTools
     const isBashUnrestricted = entry === 'Bash' || entry === 'Bash(*)';
     const isBashRestricted = entry.startsWith('Bash(') && !isBashUnrestricted;
-    // Check for path-based allow rules (e.g. "Write(/etc/**)")
-    const isPathRule = /^[A-Za-z]+\(.*\)$/.test(entry);
 
     const ruleId = isBashUnrestricted
       ? 'SHELL_UNRESTRICTED_ALWAYS'

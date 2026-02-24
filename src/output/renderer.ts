@@ -329,7 +329,8 @@ const renderFooter = (summary: ScanSummary) => {
   const scope  = stats.projectsScanned > 1
     ? chalk.dim(`${stats.projectsScanned} projects`)
     : chalk.dim(`${summary.agentsDetected.length} agent${summary.agentsDetected.length !== 1 ? 's' : ''}`);
+  const time   = chalk.dim(new Date(summary.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
-  console.log(`  ${high}  ${chalk.dim('·')}  ${medium}  ${chalk.dim('·')}  ${low}  ${chalk.dim('·')}  ${dur}  ${chalk.dim('·')}  ${scope}`);
+  console.log(`  ${high}  ${chalk.dim('·')}  ${medium}  ${chalk.dim('·')}  ${low}  ${chalk.dim('·')}  ${dur}  ${chalk.dim('·')}  ${scope}  ${chalk.dim('·')}  ${time}`);
   console.log();
 };

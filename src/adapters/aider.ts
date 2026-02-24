@@ -12,7 +12,6 @@ const AiderConfigSchema = z.object({
   yes: z.boolean().optional(),
   'auto-commits': z.boolean().optional(),
   shell: z.boolean().optional(),
-  'skip-check': z.boolean().optional(),
 }).passthrough();
 
 const AGENT_ID = 'aider' as const;
