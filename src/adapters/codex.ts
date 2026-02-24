@@ -13,6 +13,7 @@ const CodexConfigSchema = z.object({
   sandbox: z.object({
     enabled: z.boolean().optional(),
   }).optional(),
+  full_auto: z.boolean().optional(),
 }).passthrough();
 
 const AGENT_ID = 'codex' as const;
@@ -23,27 +24,29 @@ const getConfigPaths = () => {
   return [path.join(home, '.codex', 'config.toml')];
 };
 
-const extractFindings = (config: z.infer<typeof CodexConfigSchema>, configPath: string): Finding[] => {
+const extractFindings = (config: z.infer<typeof CodexConfigSchema>, configPath: string, projectDir: string): Finding[] => {
   const findings: Finding[] = [];
 
-  if (config.approval_policy === 'auto') {
+  if (config.approval_policy === 'auto' || config.full_auto === true) {
+    const ruleId = config.full_auto ? 'APPROVAL_POLICY_AUTO' : 'APPROVAL_POLICY_AUTO';
     const permission: NormalizedPermission = {
       capability: 'shell',
       scope: 'global',
       persistence: 'always',
       constraints: [],
-      rawKey: 'approval_policy',
-      rawValue: config.approval_policy,
+      rawKey: config.full_auto ? 'full_auto' : 'approval_policy',
+      rawValue: config.full_auto ? true : config.approval_policy,
     };
-    const classified = classifyFinding(permission, 'APPROVAL_POLICY_AUTO');
+    const classified = classifyFinding(permission, ruleId);
     findings.push({
       id: makeFindingId(AGENT_ID, 'approval_policy', 'auto'),
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
-      ruleId: 'APPROVAL_POLICY_AUTO',
+      ruleId,
     });
   }
 
@@ -62,6 +65,7 @@ const extractFindings = (config: z.infer<typeof CodexConfigSchema>, configPath: 
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
       ruleId: 'SANDBOX_DISABLED',
@@ -81,14 +85,14 @@ export const codexAdapter = defineAdapter({
     });
   },
 
-  async scan() {
+  async scan(projectDir) {
     const findings: Finding[] = [];
     for (const configPath of getConfigPaths()) {
       const raw = safeReadToml(configPath);
       if (!raw) continue;
       const parsed = CodexConfigSchema.safeParse(raw);
       if (!parsed.success) continue;
-      findings.push(...extractFindings(parsed.data, configPath));
+      findings.push(...extractFindings(parsed.data, configPath, projectDir));
     }
     return findings;
   },

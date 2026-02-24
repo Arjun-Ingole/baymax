@@ -11,6 +11,7 @@ export const renderJson = (summary: ScanSummary): void => {
       low: summary.lowCount,
       info: summary.infoCount,
     },
+    stats: summary.stats,
     findings: summary.findings,
   };
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');

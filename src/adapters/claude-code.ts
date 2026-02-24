@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { z } from 'zod';
 import { defineAdapter } from './base.js';
 import { safeReadJson } from '../utils/file-reader.js';
-import { classifyFinding } from '../risk/classifier.js';
+import { classifyFinding, isSensitivePath } from '../risk/classifier.js';
 import { makeFindingId } from '../utils/finding-id.js';
 import type { Finding, NormalizedPermission } from '../types.js';
 
@@ -24,15 +24,18 @@ const ClaudeSettingsSchema = z.object({
 const AGENT_ID = 'claude-code' as const;
 const AGENT_LABEL = 'Claude Code';
 
+const SECRET_PATTERN = /(?:key|token|secret|password|passwd|credential|api[_-]?key|auth)/i;
+
 const getConfigPaths = (projectDir: string) => [
   path.join(os.homedir(), '.claude', 'settings.json'),
   path.join(projectDir, '.claude', 'settings.json'),
   path.join(projectDir, '.claude', 'settings.local.json'),
 ];
 
-const extractFindings = (settings: z.infer<typeof ClaudeSettingsSchema>, configPath: string): Finding[] => {
+const extractFindings = (settings: z.infer<typeof ClaudeSettingsSchema>, configPath: string, projectDir: string): Finding[] => {
   const findings: Finding[] = [];
 
+  // allowedTools array
   for (const tool of settings.allowedTools ?? []) {
     const isBashUnrestricted = tool === 'Bash' || tool === 'Bash(*)';
     const isBashRestricted = tool.startsWith('Bash(') && !isBashUnrestricted;
@@ -58,18 +61,56 @@ const extractFindings = (settings: z.infer<typeof ClaudeSettingsSchema>, configP
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
       ruleId,
     });
   }
 
+  // permissions.allow array (separate from allowedTools)
+  for (const entry of settings.permissions?.allow ?? []) {
+    // skip if already caught by allowedTools
+    const isBashUnrestricted = entry === 'Bash' || entry === 'Bash(*)';
+    const isBashRestricted = entry.startsWith('Bash(') && !isBashUnrestricted;
+    // Check for path-based allow rules (e.g. "Write(/etc/**)")
+    const isPathRule = /^[A-Za-z]+\(.*\)$/.test(entry);
+
+    const ruleId = isBashUnrestricted
+      ? 'SHELL_UNRESTRICTED_ALWAYS'
+      : isBashRestricted
+        ? 'SHELL_RESTRICTED_ALWAYS'
+        : 'TOOL_ALWAYS_ALLOWED';
+
+    const permission: NormalizedPermission = {
+      capability: isBashUnrestricted || isBashRestricted ? 'shell' : 'unknown',
+      scope: isBashUnrestricted ? 'global' : 'repo',
+      persistence: 'always',
+      constraints: [entry],
+      rawKey: 'permissions.allow',
+      rawValue: entry,
+    };
+
+    const classified = classifyFinding(permission, ruleId);
+    findings.push({
+      id: makeFindingId(AGENT_ID, 'permissions.allow', entry),
+      agentId: AGENT_ID,
+      agentLabel: AGENT_LABEL,
+      configPath,
+      projectDir,
+      permission,
+      ...classified,
+      ruleId,
+    });
+  }
+
+  // MCP servers
   for (const [serverName, serverConfig] of Object.entries(settings.mcpServers ?? {})) {
     const permission: NormalizedPermission = {
       capability: 'mcp',
       scope: 'global',
       persistence: 'always',
-      constraints: [serverConfig.command],
+      constraints: [serverConfig.command, ...(serverConfig.args ?? [])],
       rawKey: `mcpServers.${serverName}`,
       rawValue: serverConfig,
     };
@@ -80,10 +121,36 @@ const extractFindings = (settings: z.infer<typeof ClaudeSettingsSchema>, configP
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
       ruleId: 'MCP_SERVER_REGISTERED',
     });
+
+    // Check for hardcoded secrets in MCP env
+    for (const [envKey, envVal] of Object.entries(serverConfig.env ?? {})) {
+      if (SECRET_PATTERN.test(envKey) && envVal.length > 8) {
+        const secretPermission: NormalizedPermission = {
+          capability: 'secrets',
+          scope: 'global',
+          persistence: 'always',
+          constraints: [envKey],
+          rawKey: `mcpServers.${serverName}.env.${envKey}`,
+          rawValue: '[redacted]',
+        };
+        const secretClassified = classifyFinding(secretPermission, 'SECRETS_IN_MCP_ENV');
+        findings.push({
+          id: makeFindingId(AGENT_ID, 'mcpservers', serverName, 'env', envKey),
+          agentId: AGENT_ID,
+          agentLabel: AGENT_LABEL,
+          configPath,
+          projectDir,
+          permission: secretPermission,
+          ...secretClassified,
+          ruleId: 'SECRETS_IN_MCP_ENV',
+        });
+      }
+    }
   }
 
   return findings;
@@ -106,7 +173,7 @@ export const claudeCodeAdapter = defineAdapter({
       if (!raw) continue;
       const parsed = ClaudeSettingsSchema.safeParse(raw);
       if (!parsed.success) continue;
-      findings.push(...extractFindings(parsed.data, configPath));
+      findings.push(...extractFindings(parsed.data, configPath, projectDir));
     }
     return findings;
   },

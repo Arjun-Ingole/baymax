@@ -1,9 +1,10 @@
-import type { Finding, ScanSummary, AgentId } from '../types.js';
+import type { Finding, ScanSummary, AgentId, ScanStats } from '../types.js';
 
 export const buildSummary = (
   findings: Finding[],
   agentsDetected: AgentId[],
   agentsScanned: AgentId[],
+  stats: ScanStats,
 ): ScanSummary => ({
   agentsDetected,
   agentsScanned,
@@ -13,4 +14,5 @@ export const buildSummary = (
   lowCount: findings.filter(f => f.riskLevel === 'low').length,
   infoCount: findings.filter(f => f.riskLevel === 'info').length,
   scannedAt: new Date().toISOString(),
+  stats,
 });

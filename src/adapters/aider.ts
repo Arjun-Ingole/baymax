@@ -12,6 +12,7 @@ const AiderConfigSchema = z.object({
   yes: z.boolean().optional(),
   'auto-commits': z.boolean().optional(),
   shell: z.boolean().optional(),
+  'skip-check': z.boolean().optional(),
 }).passthrough();
 
 const AGENT_ID = 'aider' as const;
@@ -22,7 +23,7 @@ const getConfigPaths = (projectDir: string) => [
   path.join(projectDir, '.aider.conf.yml'),
 ];
 
-const extractFindings = (config: z.infer<typeof AiderConfigSchema>, configPath: string): Finding[] => {
+const extractFindings = (config: z.infer<typeof AiderConfigSchema>, configPath: string, projectDir: string): Finding[] => {
   const findings: Finding[] = [];
 
   if (config.yes === true) {
@@ -40,6 +41,7 @@ const extractFindings = (config: z.infer<typeof AiderConfigSchema>, configPath: 
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
       ruleId: 'SKIP_ALL_CONFIRMATIONS',
@@ -61,6 +63,7 @@ const extractFindings = (config: z.infer<typeof AiderConfigSchema>, configPath: 
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
       ruleId: 'AUTO_COMMITS_ENABLED',
@@ -82,6 +85,7 @@ const extractFindings = (config: z.infer<typeof AiderConfigSchema>, configPath: 
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
       ruleId: 'SHELL_UNRESTRICTED_ALWAYS',
@@ -108,7 +112,7 @@ export const aiderAdapter = defineAdapter({
       if (!raw) continue;
       const parsed = AiderConfigSchema.safeParse(raw);
       if (!parsed.success) continue;
-      findings.push(...extractFindings(parsed.data, configPath));
+      findings.push(...extractFindings(parsed.data, configPath, projectDir));
     }
     return findings;
   },

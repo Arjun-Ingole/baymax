@@ -5,6 +5,7 @@ export type Capability =
   | 'network'
   | 'mcp'
   | 'env'
+  | 'secrets'
   | 'unknown';
 
 export type Scope = 'global' | 'repo' | 'path' | 'unknown';
@@ -26,12 +27,21 @@ export interface Finding {
   agentId: AgentId;
   agentLabel: string;
   configPath: string;
+  projectDir: string;
   permission: NormalizedPermission;
   riskLevel: RiskLevel;
+  score: number;        // 1–10 severity score
   ruleId: string;
   title: string;
   description: string;
   remediation: string;
+}
+
+export interface ScanStats {
+  configsChecked: number;
+  configsFound: number;
+  projectsScanned: number;
+  durationMs: number;
 }
 
 export interface ScanSummary {
@@ -43,6 +53,7 @@ export interface ScanSummary {
   lowCount: number;
   infoCount: number;
   scannedAt: string;
+  stats: ScanStats;
 }
 
 export interface AgentAdapter {
@@ -56,6 +67,8 @@ export interface ScanOptions {
   projectDir: string;
   json: boolean;
   quiet: boolean;
+  depth: number;
+  verbose: boolean;
 }
 
 export interface JsonOutput {
@@ -68,5 +81,6 @@ export interface JsonOutput {
     low: number;
     info: number;
   };
+  stats: ScanStats;
   findings: Finding[];
 }

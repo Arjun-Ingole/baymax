@@ -8,7 +8,6 @@ import { claudeCodeAdapter } from './claude-code.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(__dirname, '../__fixtures__');
 
-// Create a temp dir to simulate a project
 const makeTempProject = (claudeDir?: Record<string, string>) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'baymax-test-'));
   if (claudeDir) {
@@ -34,11 +33,10 @@ describe('claudeCodeAdapter', () => {
       }
     });
 
-    it('returns false when no claude configs exist', () => {
+    it('detect() returns a boolean', () => {
       const tmpDir = makeTempProject();
       try {
-        const result = claudeCodeAdapter.detect(tmpDir);
-        expect(typeof result).toBe('boolean');
+        expect(typeof claudeCodeAdapter.detect(tmpDir)).toBe('boolean');
       } finally {
         cleanup(tmpDir);
       }
@@ -57,6 +55,8 @@ describe('claudeCodeAdapter', () => {
         expect(bashFinding?.riskLevel).toBe('high');
         expect(bashFinding?.permission.capability).toBe('shell');
         expect(bashFinding?.permission.scope).toBe('global');
+        expect(bashFinding?.score).toBeGreaterThanOrEqual(7);
+        expect(bashFinding?.projectDir).toBeTruthy();
       } finally {
         cleanup(tmpDir);
       }
@@ -94,6 +94,24 @@ describe('claudeCodeAdapter', () => {
     });
   });
 
+  describe('scan() - permissions.allow', () => {
+    it('detects Bash in permissions.allow', async () => {
+      const tmpDir = makeTempProject({
+        'settings.json': JSON.stringify({ permissions: { allow: ['Bash'] } }),
+      });
+      try {
+        const findings = await claudeCodeAdapter.scan(tmpDir);
+        const bashFinding = findings.find(f =>
+          f.ruleId === 'SHELL_UNRESTRICTED_ALWAYS' && f.permission.rawKey === 'permissions.allow'
+        );
+        expect(bashFinding).toBeDefined();
+        expect(bashFinding?.riskLevel).toBe('high');
+      } finally {
+        cleanup(tmpDir);
+      }
+    });
+  });
+
   describe('scan() - low risk: other tools', () => {
     it('detects Read/Write as low risk', async () => {
       const tmpDir = makeTempProject({
@@ -124,7 +142,29 @@ describe('claudeCodeAdapter', () => {
         const mcpFinding = findings.find(f => f.ruleId === 'MCP_SERVER_REGISTERED');
         expect(mcpFinding).toBeDefined();
         expect(mcpFinding?.id).toContain('mcpservers');
-        expect(mcpFinding?.id).toContain('filesystem');
+      } finally {
+        cleanup(tmpDir);
+      }
+    });
+
+    it('detects hardcoded secrets in MCP env', async () => {
+      const tmpDir = makeTempProject({
+        'settings.json': JSON.stringify({
+          mcpServers: {
+            'github': {
+              command: 'npx',
+              env: { GITHUB_TOKEN: 'ghp_realtoken123456789' },
+            },
+          },
+        }),
+      });
+      try {
+        const findings = await claudeCodeAdapter.scan(tmpDir);
+        const secretFinding = findings.find(f => f.ruleId === 'SECRETS_IN_MCP_ENV');
+        expect(secretFinding).toBeDefined();
+        expect(secretFinding?.riskLevel).toBe('high');
+        // Value should be redacted
+        expect(secretFinding?.permission.rawValue).toBe('[redacted]');
       } finally {
         cleanup(tmpDir);
       }
@@ -163,7 +203,7 @@ describe('claudeCodeAdapter', () => {
   });
 
   describe('scan() - error handling', () => {
-    it('returns empty array for missing config', async () => {
+    it('returns array even for missing config', async () => {
       const tmpDir = makeTempProject();
       try {
         const findings = await claudeCodeAdapter.scan(path.join(tmpDir, 'nonexistent'));

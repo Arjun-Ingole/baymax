@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { z } from 'zod';
 import { defineAdapter } from './base.js';
 import { safeReadJson } from '../utils/file-reader.js';
-import { classifyFinding } from '../risk/classifier.js';
+import { classifyFinding, isSensitivePath } from '../risk/classifier.js';
 import { makeFindingId } from '../utils/finding-id.js';
 import type { Finding, NormalizedPermission } from '../types.js';
 
@@ -24,7 +24,7 @@ const getConfigPaths = (projectDir: string) => [
   path.join(projectDir, '.cursor', 'cli.json'),
 ];
 
-const extractFindings = (config: z.infer<typeof CursorConfigSchema>, configPath: string): Finding[] => {
+const extractFindings = (config: z.infer<typeof CursorConfigSchema>, configPath: string, projectDir: string): Finding[] => {
   const findings: Finding[] = [];
 
   for (const tool of config.permissions?.allow ?? []) {
@@ -44,6 +44,7 @@ const extractFindings = (config: z.infer<typeof CursorConfigSchema>, configPath:
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
       ruleId,
@@ -51,11 +52,13 @@ const extractFindings = (config: z.infer<typeof CursorConfigSchema>, configPath:
   }
 
   for (const trustedPath of config.trustedPaths ?? []) {
-    const isGlobal = trustedPath === os.homedir() || trustedPath === '/' || trustedPath === '~';
-    const ruleId = isGlobal ? 'TRUSTED_DIR_GLOBAL' : 'FS_WRITE_REPO';
+    const expandedPath = trustedPath.replace(/^~/, os.homedir());
+    const isGlobal = expandedPath === os.homedir() || trustedPath === '/' || trustedPath === '~';
+    const isSensitive = isSensitivePath(expandedPath);
+    const ruleId = isSensitive ? 'SENSITIVE_PATH_TRUSTED' : isGlobal ? 'TRUSTED_DIR_GLOBAL' : 'FS_WRITE_REPO';
     const permission: NormalizedPermission = {
       capability: 'fs-write',
-      scope: isGlobal ? 'global' : 'path',
+      scope: isGlobal || isSensitive ? 'global' : 'path',
       persistence: 'always',
       constraints: [trustedPath],
       rawKey: 'trustedPaths',
@@ -67,6 +70,7 @@ const extractFindings = (config: z.infer<typeof CursorConfigSchema>, configPath:
       agentId: AGENT_ID,
       agentLabel: AGENT_LABEL,
       configPath,
+      projectDir,
       permission,
       ...classified,
       ruleId,
@@ -93,7 +97,7 @@ export const cursorAdapter = defineAdapter({
       if (!raw) continue;
       const parsed = CursorConfigSchema.safeParse(raw);
       if (!parsed.success) continue;
-      findings.push(...extractFindings(parsed.data, configPath));
+      findings.push(...extractFindings(parsed.data, configPath, projectDir));
     }
     return findings;
   },
