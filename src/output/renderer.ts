@@ -107,6 +107,7 @@ const COMMAND_RISKS: Record<string, string> = {
   'npm':       'runs package scripts — postinstall hooks and scripts execute arbitrary code',
   'yarn':      'runs package scripts — hooks and scripts execute arbitrary code',
   'pnpm':      'runs package scripts — hooks and scripts execute arbitrary code',
+  'npx':       'downloads and runs npm packages — can execute arbitrary code from the registry',
   'git':       'can read history, credentials, config — and push changes to remotes',
   'git add':   'stages files for commit — can include .env or secrets before anyone reviews',
   'git commit':'commits without review — agent mistakes become permanent in history',
@@ -151,6 +152,18 @@ const extractBaseCommand = (pattern: string): string => {
   return words[0] ?? base;
 };
 
+// Explanations for non-Bash tools that are permanently allowed
+const TOOL_RISKS: Record<string, string> = {
+  'websearch':   'searches the web without asking — can be used to exfiltrate context like file names or code snippets in queries',
+  'webfetch':    'fetches any URL without asking — agent can silently send data to external servers via query params or POST',
+  'read':        'reads any file without asking — can access .env files, SSH keys, and other secrets in your project',
+  'write':       'writes any file without asking — can overwrite config, inject code, or create new files silently',
+  'edit':        'edits any file without asking — changes are made without a confirmation step each time',
+  'bash':        'runs any shell command without asking — effectively unrestricted system access',
+  'computer':    'controls your computer — can interact with any app, read screen contents, and take actions on your behalf',
+  'browser':     'controls a browser — can visit any site, interact with web apps, and exfiltrate data via navigation',
+};
+
 // Returns a specific explanation for the command, or falls back to the rule summary
 const commandExplanation = (f: Finding): string => {
   if (f.ruleId === 'SHELL_RESTRICTED_ALWAYS' || f.ruleId === 'SHELL_UNRESTRICTED_ALWAYS') {
@@ -159,12 +172,18 @@ const commandExplanation = (f: Finding): string => {
     const cmd = extractBaseCommand(pattern || raw);
     const risk = COMMAND_RISKS[cmd.toLowerCase()];
     if (risk) return `${chalk.white(cmd)} — ${risk}`;
+    return `${chalk.white(cmd)} — always runs without a confirmation prompt; if the agent uses wrong arguments, it won't ask first`;
   }
   if (f.ruleId === 'TOOL_ALWAYS_ALLOWED') {
     const val = typeof f.permission.rawValue === 'string' ? f.permission.rawValue : '';
+    // Check Bash sub-pattern first
     const cmd = extractBaseCommand(val);
-    const risk = COMMAND_RISKS[cmd.toLowerCase()];
-    if (risk) return `${chalk.white(cmd)} — ${risk}`;
+    const cmdRisk = COMMAND_RISKS[cmd.toLowerCase()];
+    if (cmdRisk) return `${chalk.white(cmd)} — ${cmdRisk}`;
+    // Check tool-level risk (tool names like WebSearch, WebFetch, Read, Write…)
+    const toolRisk = TOOL_RISKS[val.toLowerCase()] ?? TOOL_RISKS[cmd.toLowerCase()];
+    if (toolRisk) return `${chalk.white(val)} — ${toolRisk}`;
+    return `${chalk.white(val)} — permanently skips the confirmation prompt; if this tool does something unexpected, the agent won't pause to ask`;
   }
   return f.summary;
 };
@@ -229,8 +248,7 @@ const contextualTitle = (f: Finding): string => {
 const renderFinding = (f: Finding) => {
   const pad = '       ';
   console.log(`  ${RISK_BADGE[f.riskLevel]}  ${chalk.white.bold(contextualTitle(f))}`);
-  console.log(`${pad}${chalk.dim(commandExplanation(f))}`);
-  console.log(`${pad}${chalk.cyan('→')} ${f.remediation}`);
+  console.log(`${pad}${chalk.white(commandExplanation(f))}`);
   console.log();
 };
 
