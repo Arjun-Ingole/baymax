@@ -187,44 +187,66 @@ const renderScoreBar = (score: number): string => {
 const home = os.homedir();
 const shorten = (p: string) => p.replace(home, '~');
 
-const BADGE: Record<RiskLevel, string> = {
+// Distinct background badge per agent so the source is instantly recognisable
+const AGENT_BADGE: Record<string, string> = {
+  'claude-code': chalk.bgBlue.white.bold(' Claude Code '),
+  'cursor':      chalk.bgCyan.black.bold(' Cursor '),
+  'codex':       chalk.bgGreen.black.bold(' Codex CLI '),
+  'gemini':      chalk.bgYellow.black.bold(' Gemini '),
+  'copilot':     chalk.bgMagenta.white.bold(' Copilot '),
+  'aider':       chalk.bgRed.white.bold(' Aider '),
+};
+
+const agentBadge = (agentId: string): string =>
+  AGENT_BADGE[agentId] ?? chalk.bgGray.white.bold(` ${agentId} `);
+
+const RISK_BADGE: Record<RiskLevel, string> = {
   high:   chalk.red.bold('HIGH'),
   medium: chalk.yellow('MED '),
   low:    chalk.dim('LOW '),
   info:   chalk.dim('INFO'),
 };
 
-// Contextual title: use the specific value/command rather than the generic rule title
+// Contextual title: show the specific value rather than the generic rule title
 const contextualTitle = (f: Finding): string => {
   const val = typeof f.permission.rawValue === 'string' ? f.permission.rawValue : null;
   const key = f.permission.rawKey;
 
-  if (f.ruleId === 'MCP_SERVER_REGISTERED') {
-    const name = key.split('.').pop() ?? val ?? '';
-    return `MCP server: ${name}`;
-  }
-  if (f.ruleId === 'SHELL_RESTRICTED_ALWAYS' && f.permission.constraints[0]) {
+  if (f.ruleId === 'MCP_SERVER_REGISTERED')
+    return `MCP server: ${key.split('.').pop() ?? val ?? ''}`;
+  if (f.ruleId === 'SHELL_RESTRICTED_ALWAYS' && f.permission.constraints[0])
     return f.permission.constraints[0];
-  }
-  if (f.ruleId === 'TOOL_ALWAYS_ALLOWED' && val) {
+  if (f.ruleId === 'TOOL_ALWAYS_ALLOWED' && val)
     return `Permanently allowed: ${val}`;
-  }
-  if ((f.ruleId === 'TRUSTED_DIR_GLOBAL' || f.ruleId === 'SENSITIVE_PATH_TRUSTED') && val) {
+  if ((f.ruleId === 'TRUSTED_DIR_GLOBAL' || f.ruleId === 'SENSITIVE_PATH_TRUSTED') && val)
     return `Trusted path: ${val}`;
-  }
-  if (f.ruleId === 'SECRETS_IN_MCP_ENV') {
+  if (f.ruleId === 'SECRETS_IN_MCP_ENV')
     return `Hardcoded secret: ${key.split('.').pop() ?? ''}`;
-  }
   return f.title;
 };
 
+// Render a single finding — source info omitted here, shown once in the group header
 const renderFinding = (f: Finding) => {
-  const indent = '        ';
-  console.log(`  ${BADGE[f.riskLevel]}  ${chalk.white.bold(contextualTitle(f))}`);
-  console.log(`${indent}${chalk.dim(f.permission.rawKey)}  ${chalk.dim(`${f.agentLabel} · ${shorten(f.configPath)}`)}`);
-  console.log(`${indent}${chalk.dim(commandExplanation(f))}`);
-  console.log(`${indent}${chalk.cyan('→')} ${f.remediation}`);
+  const pad = '       ';
+  console.log(`  ${RISK_BADGE[f.riskLevel]}  ${chalk.white.bold(contextualTitle(f))}`);
+  console.log(`${pad}${chalk.dim(commandExplanation(f))}`);
+  console.log(`${pad}${chalk.cyan('→')} ${f.remediation}`);
   console.log();
+};
+
+// Group findings by agent + config path so the source is printed once per group
+type Group = { agentId: string; agentLabel: string; configPath: string; projectDir: string; findings: Finding[] };
+
+const groupFindings = (findings: Finding[]): Group[] => {
+  const map = new Map<string, Group>();
+  for (const f of findings) {
+    const key = `${f.agentId}::${f.configPath}`;
+    if (!map.has(key)) {
+      map.set(key, { agentId: f.agentId, agentLabel: f.agentLabel, configPath: f.configPath, projectDir: f.projectDir, findings: [] });
+    }
+    map.get(key)!.findings.push(f);
+  }
+  return [...map.values()];
 };
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -236,7 +258,6 @@ export const renderFindings = (summary: ScanSummary, options: { quiet?: boolean 
   console.log();
   renderHeader(score, summary.findings[0]?.projectDir ?? process.cwd());
 
-  // Nothing detected at all
   if (summary.agentsDetected.length === 0) {
     console.log(chalk.dim('  No supported AI agent configs detected.'));
     console.log();
@@ -251,7 +272,6 @@ export const renderFindings = (summary: ScanSummary, options: { quiet?: boolean 
       return order[a.riskLevel] - order[b.riskLevel] || b.score - a.score;
     });
 
-  // All clear
   if (visible.length === 0) {
     console.log(`  ${chalk.green('✓')}  ${chalk.green.bold('All clear')}  ${chalk.dim(`— no risky permissions across ${summary.agentsDetected.join(', ')}`)}`);
     console.log();
@@ -259,15 +279,24 @@ export const renderFindings = (summary: ScanSummary, options: { quiet?: boolean 
     return;
   }
 
-  // Project header only when scanning multiple projects
+  const groups = groupFindings(visible);
   let lastProject = '';
-  for (const f of visible) {
-    if (stats.projectsScanned > 1 && f.projectDir !== lastProject) {
-      console.log(`  ${chalk.bold.underline(shorten(f.projectDir))}`);
+
+  for (const group of groups) {
+    // Project header when scanning multiple dirs
+    if (stats.projectsScanned > 1 && group.projectDir !== lastProject) {
+      console.log(`  ${chalk.bold.underline(shorten(group.projectDir))}`);
       console.log();
-      lastProject = f.projectDir;
+      lastProject = group.projectDir;
     }
-    renderFinding(f);
+
+    // Agent group header — printed ONCE per source
+    console.log(`  ${agentBadge(group.agentId)}  ${chalk.dim(shorten(group.configPath))}`);
+    console.log();
+
+    for (const f of group.findings) {
+      renderFinding(f);
+    }
   }
 
   renderFooter(summary);
