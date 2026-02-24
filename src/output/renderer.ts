@@ -2,6 +2,57 @@ import chalk from 'chalk';
 import os from 'node:os';
 import type { ScanSummary, Finding, RiskLevel } from '../types.js';
 
+const VERSION = '1.0.0';
+
+// ── Mascot ────────────────────────────────────────────────────────────────────
+//
+//  Three expressions that change with the safety score:
+//
+//   ≥ 90  happy      30–89  concerned      < 30  alarmed
+//  ╭────╮            ╭────╮               ╭────╮
+//  │● ●│            │· ·│               │◉ ◉│
+//  │ ╰╯ │            │ ── │               │ ╭╮ │
+//  ╰────╯            ╰────╯               ╰────╯
+
+type Expression = 'happy' | 'concerned' | 'alarmed';
+
+const expression = (score: number): Expression =>
+  score >= 90 ? 'happy' : score >= 30 ? 'concerned' : 'alarmed';
+
+const EYES: Record<Expression, string> = {
+  happy:     '  ●  ●  ',
+  concerned: '  ·  ·  ',
+  alarmed:   '  ◉  ◉  ',
+};
+
+const MOUTH: Record<Expression, string> = {
+  happy:     '  ╰──╯  ',
+  concerned: '  ────  ',
+  alarmed:   '  ╭──╮  ',
+};
+
+const MOOD: Record<Expression, string> = {
+  happy:     chalk.green("you're good"),
+  concerned: chalk.yellow('stay alert'),
+  alarmed:   chalk.red('needs attention'),
+};
+
+const renderHeader = (score: number, projectDir: string) => {
+  const expr   = expression(score);
+  const face   = chalk.white;
+  const border = chalk.dim;
+
+  const scoreLine = renderScoreBar(score);
+  const dir = projectDir === process.cwd() ? '' : chalk.dim(` · ${projectDir.replace(os.homedir(), '~')}`);
+
+  // 4-line art rendered side-by-side with branding
+  console.log(`  ${border('╭────────╮')}   ${chalk.bold('baymax')}  ${chalk.dim(`v${VERSION}`)}${dir}`);
+  console.log(`  ${border('│')}${face(EYES[expr])}${border('│')}   ${chalk.dim('AI agent permission scanner')}`);
+  console.log(`  ${border('│')}${face(MOUTH[expr])}${border('│')}   ${scoreLine}`);
+  console.log(`  ${border('╰────────╯')}   ${MOOD[expr]}`);
+  console.log();
+};
+
 // ── Spinner ───────────────────────────────────────────────────────────────────
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -183,12 +234,13 @@ export const renderFindings = (summary: ScanSummary, options: { quiet?: boolean 
   const score = calcSafetyScore(summary);
 
   console.log();
+  renderHeader(score, summary.findings[0]?.projectDir ?? process.cwd());
 
   // Nothing detected at all
   if (summary.agentsDetected.length === 0) {
     console.log(chalk.dim('  No supported AI agent configs detected.'));
     console.log();
-    renderFooter(summary, score);
+    renderFooter(summary);
     return;
   }
 
@@ -199,15 +251,11 @@ export const renderFindings = (summary: ScanSummary, options: { quiet?: boolean 
       return order[a.riskLevel] - order[b.riskLevel] || b.score - a.score;
     });
 
-  // Safety score header
-  console.log(`  ${chalk.bold('Safety score')}  ${renderScoreBar(score)}`);
-  console.log();
-
   // All clear
   if (visible.length === 0) {
     console.log(`  ${chalk.green('✓')}  ${chalk.green.bold('All clear')}  ${chalk.dim(`— no risky permissions across ${summary.agentsDetected.join(', ')}`)}`);
     console.log();
-    renderFooter(summary, score);
+    renderFooter(summary);
     return;
   }
 
@@ -222,10 +270,10 @@ export const renderFindings = (summary: ScanSummary, options: { quiet?: boolean 
     renderFinding(f);
   }
 
-  renderFooter(summary, score);
+  renderFooter(summary);
 };
 
-const renderFooter = (summary: ScanSummary, _score: number) => {
+const renderFooter = (summary: ScanSummary) => {
   const { stats } = summary;
   const high   = summary.highCount   > 0 ? chalk.red.bold(`${summary.highCount} high`)   : chalk.dim(`${summary.highCount} high`);
   const medium = summary.mediumCount > 0 ? chalk.yellow(`${summary.mediumCount} medium`) : chalk.dim(`${summary.mediumCount} medium`);
