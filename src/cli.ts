@@ -5,6 +5,7 @@ import { runScan } from './scan.js';
 import { renderFindings, Spinner } from './output/renderer.js';
 import { renderJson } from './output/json-reporter.js';
 import { renderMarkdown } from './output/markdown-reporter.js';
+import { runFix } from './fix/index.js';
 import { logger } from './utils/logger.js';
 
 const program = new Command()
@@ -38,6 +39,26 @@ program
       }
 
       process.exit(summary.highCount > 0 ? 1 : 0);
+    } catch (err) {
+      logger.error(`Error: ${String(err)}`);
+      process.exit(2);
+    }
+  });
+
+program
+  .command('fix')
+  .description('Interactively fix risky permissions in agent configs')
+  .argument('[directory]', 'Project directory to scan', '.')
+  .option('--depth <n>', 'Subdirectory recursion depth', '2')
+  .action(async (directory: string, flags: { depth: string }) => {
+    try {
+      const projectDir = path.resolve(directory);
+      const depth = Math.max(0, parseInt(flags.depth, 10) || 2);
+      const spinner = new Spinner('Scanning agent configs…').start();
+      const summary = await runScan({ projectDir, json: false, quiet: false, verbose: false, depth });
+      spinner.stop();
+      renderFindings(summary, {});
+      await runFix(summary);
     } catch (err) {
       logger.error(`Error: ${String(err)}`);
       process.exit(2);

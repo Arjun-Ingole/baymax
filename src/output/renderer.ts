@@ -216,10 +216,10 @@ const AGENT_BADGE: Record<string, string> = {
   'aider':       chalk.bgRed.white.bold(' Aider '),
 };
 
-const agentBadge = (agentId: string): string =>
+export const agentBadge = (agentId: string): string =>
   AGENT_BADGE[agentId] ?? chalk.bgGray.white.bold(` ${agentId} `);
 
-const RISK_BADGE: Record<RiskLevel, string> = {
+export const RISK_BADGE: Record<RiskLevel, string> = {
   high:   chalk.red.bold('HIGH'),
   medium: chalk.yellow('MED '),
   low:    chalk.dim('LOW '),
@@ -227,7 +227,7 @@ const RISK_BADGE: Record<RiskLevel, string> = {
 };
 
 // Contextual title: show the specific value rather than the generic rule title
-const contextualTitle = (f: Finding): string => {
+export const contextualTitle = (f: Finding): string => {
   const val = typeof f.permission.rawValue === 'string' ? f.permission.rawValue : null;
   const key = f.permission.rawKey;
 
