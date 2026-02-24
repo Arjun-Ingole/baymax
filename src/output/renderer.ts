@@ -234,7 +234,7 @@ export const contextualTitle = (f: Finding): string => {
   if (f.ruleId === 'MCP_SERVER_REGISTERED')
     return `MCP server: ${key.split('.').pop() ?? val ?? ''}`;
   if (f.ruleId === 'SHELL_RESTRICTED_ALWAYS' && f.permission.constraints[0])
-    return f.permission.constraints[0];
+    return f.permission.constraints[0].replace(/^(?:Bash|Shell)\(/, '').replace(/\)$/, '');
   if (f.ruleId === 'TOOL_ALWAYS_ALLOWED' && val)
     return `Permanently allowed: ${val}`;
   if ((f.ruleId === 'TRUSTED_DIR_GLOBAL' || f.ruleId === 'SENSITIVE_PATH_TRUSTED') && val)
