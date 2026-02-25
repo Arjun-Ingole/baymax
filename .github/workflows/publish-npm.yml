@@ -39,8 +39,8 @@ jobs:
       - name: Read package metadata
         id: pkg
         run: |
-          echo "name=$(node -p \"require('./package.json').name\")" >> "$GITHUB_OUTPUT"
-          echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+          echo "name=$(npm pkg get name | tr -d '\"')" >> "$GITHUB_OUTPUT"
+          echo "version=$(npm pkg get version | tr -d '\"')" >> "$GITHUB_OUTPUT"
 
       - name: Check if version already exists on npm
         id: version_check
