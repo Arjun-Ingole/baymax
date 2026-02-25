@@ -228,6 +228,12 @@
         background: var(--panel-2);
       }
 
+      .hero-side pre {
+        font-size: 0.95rem;
+        line-height: 1.5;
+        overflow-x: auto;
+      }
+
       .tool-logos {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -486,6 +492,13 @@
         border-radius: 14px;
       }
 
+      .cta-row {
+        margin-top: 0.9rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+      }
+
       .deploy-box ol {
         margin: 0;
         padding-left: 1.1rem;
@@ -513,11 +526,46 @@
           border-right: 0;
           border-bottom: 1px solid var(--line);
         }
+
+        .hero-side pre {
+          font-size: 0.9rem;
+        }
       }
 
       @media (max-width: 760px) {
         .nav {
           display: none;
+        }
+
+        .window-head span {
+          max-width: 220px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .hero-side pre {
+          font-size: 0.82rem;
+        }
+
+        .command-row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .hero-main {
+          padding: 1.1rem;
+        }
+
+        .hero-side {
+          padding: 0.95rem;
+        }
+
+        .hero-side pre {
+          font-size: 0.74rem;
+          line-height: 1.45;
         }
       }
     </style>
@@ -530,7 +578,7 @@
           <a href="#what">what-it-does</a>
           <a href="#commands">commands</a>
           <a href="#risk">risk-engine</a>
-          <a href="#deploy">deploy</a>
+          <a href="#get-started">get-started</a>
         </nav>
       </div>
     </header>
@@ -699,15 +747,24 @@
         </div>
       </section>
 
-      <section id="deploy">
-        <h2>Deploy this page on GitHub Pages</h2>
+      <section id="get-started">
+        <h2>Get started</h2>
+        <p class="lead">Install Baymax in under a minute and audit your AI coding agent permissions locally.</p>
         <div class="deploy-box">
-          <ol>
-            <li>Commit <code>docs/index.html</code> to your default branch.</li>
-            <li>Open repository settings → <code>Pages</code>.</li>
-            <li>Choose <code>Deploy from a branch</code>.</li>
-            <li>Select branch: <code>main</code> (or default), folder: <code>/docs</code>.</li>
-          </ol>
+          <div class="command-block">
+            <div class="command-row">
+              <code>npm install -g baymax-cli</code>
+              <button class="copy" data-copy="npm install -g baymax-cli">copy</button>
+            </div>
+            <div class="command-row">
+              <code>baymax scan .</code>
+              <button class="copy" data-copy="baymax scan .">copy</button>
+            </div>
+          </div>
+          <div class="cta-row">
+            <a class="cmd" href="https://github.com/Arjun-Ingole/baymax" target="_blank" rel="noreferrer">view source</a>
+            <a class="cmd alt" href="#commands">see all commands</a>
+          </div>
         </div>
       </section>
     </main>
