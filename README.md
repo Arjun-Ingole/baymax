@@ -34,13 +34,20 @@ Modern coding agents reduce friction with "Allow always" buttons. Developers cli
 | **GitHub Copilot** | `permanentlyTrustedDirectories`, `networkAccess: true` |
 | **Aider** | `yes: true`, `auto-commits: true`, `shell: true` |
 
-## Install
+## Install from source (development)
 
 ```bash
 git clone <repo>
 cd baymax
 npm install && npm run build
 npm link          # makes `baymax` available globally
+```
+
+## Install from npm
+
+```bash
+npm install -g baymax-cli
+baymax --help
 ```
 
 ## Usage

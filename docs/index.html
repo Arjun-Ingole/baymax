@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Baymax | Permission Drift Scanner for AI Coding Agents</title>
+    <meta
+      name="description"
+      content="Baymax is a local CLI that scans AI coding agent configs for dangerous always-allow permissions and silent trust drift."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Sora:wght@500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0f0708;
+        --panel: #180c0d;
+        --panel-2: #201012;
+        --line: #3c272b;
+        --line-soft: #2d1e21;
+        --text: #fdf4f5;
+        --muted: #c9afb3;
+        --ok: #f4bcc3;
+        --warn: #ffd36e;
+        --danger: #ed8393;
+        --accent: #df7283;
+        --accent-2: #e3aeb7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: radial-gradient(circle at 82% -14%, #46242b 0%, var(--bg) 42%), var(--bg);
+        color: var(--text);
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(
+          to bottom,
+          rgba(255, 255, 255, 0.04) 0,
+          rgba(255, 255, 255, 0.04) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+        background-size: 100% 3px;
+        opacity: 0.08;
+        z-index: 5;
+      }
+
+      .wrap {
+        width: min(1180px, calc(100% - 2rem));
+        margin: 0 auto;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--line);
+        background: rgba(15, 7, 8, 0.78);
+        backdrop-filter: blur(14px);
+      }
+
+      .topbar .wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.7rem 0;
+      }
+
+      .session {
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+
+      .session strong {
+        color: var(--ok);
+      }
+
+      .nav {
+        display: flex;
+        gap: 1.1rem;
+      }
+
+      .nav a {
+        text-decoration: none;
+        color: var(--muted);
+        font-size: 0.8rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .nav a:hover,
+      .nav a:focus-visible {
+        color: var(--text);
+      }
+
+      .hero {
+        padding: 3.2rem 0 1.4rem;
+      }
+
+      .window {
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(120, 52, 66, 0.18), rgba(0, 0, 0, 0.2));
+        box-shadow: 0 0 0 1px rgba(223, 114, 131, 0.1) inset, 0 16px 40px rgba(0, 0, 0, 0.45);
+        border-radius: 20px;
+        overflow: hidden;
+      }
+
+      .window-head {
+        height: 42px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 1rem;
+        font-size: 0.75rem;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      .dots {
+        display: flex;
+        gap: 0.45rem;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+      }
+
+      .dot:nth-child(1) {
+        background: var(--danger);
+      }
+
+      .dot:nth-child(2) {
+        background: var(--warn);
+      }
+
+      .dot:nth-child(3) {
+        background: var(--ok);
+      }
+
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+      }
+
+      .hero-main {
+        padding: 1.65rem;
+        border-right: 1px solid var(--line);
+      }
+
+      .badge {
+        display: inline-block;
+        border: 1px solid #6f3b44;
+        color: var(--accent-2);
+        background: rgba(223, 114, 131, 0.08);
+        padding: 0.24rem 0.55rem;
+        font-size: 0.75rem;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        font-family: Sora, sans-serif;
+      }
+
+      h1 {
+        margin-top: 0.95rem;
+        font-size: clamp(1.75rem, 4.3vw, 3.2rem);
+        line-height: 1.05;
+        max-width: 15ch;
+      }
+
+      .hero-copy {
+        margin-top: 0.95rem;
+        color: var(--muted);
+        line-height: 1.7;
+        max-width: 62ch;
+      }
+
+      .cmd-row {
+        margin-top: 1.15rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+      }
+
+      .cmd {
+        border: 1px solid #744049;
+        color: var(--accent-2);
+        background: rgba(223, 114, 131, 0.08);
+        text-decoration: none;
+        padding: 0.62rem 0.84rem;
+        font-size: 0.82rem;
+        border-radius: 999px;
+        transition: background 0.2s ease, transform 0.2s ease;
+      }
+
+      .cmd:hover {
+        transform: translateY(-1px);
+      }
+
+      .cmd.alt {
+        border-color: var(--line);
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .hero-side {
+        padding: 1.2rem;
+        background: var(--panel-2);
+      }
+
+      .tool-logos {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.7rem;
+        margin-top: 1rem;
+      }
+
+      .tool-logo {
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, #1b0d10, #190c0f);
+        padding: 0.7rem 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        color: var(--text);
+        border-radius: 14px;
+      }
+
+      .icon-chip {
+        width: 28px;
+        height: 28px;
+        border-radius: 9px;
+        background: #fff;
+        border: 1px solid #f0d2d7;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+      }
+
+      .tool-logo img {
+        width: 18px;
+        height: 18px;
+        object-fit: contain;
+      }
+
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        line-height: 1.55;
+      }
+
+      .prompt {
+        color: var(--ok);
+      }
+
+      .warn {
+        color: var(--warn);
+      }
+
+      .danger {
+        color: var(--danger);
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      section {
+        padding: 2.2rem 0;
+      }
+
+      h2 {
+        font-size: clamp(1.25rem, 3vw, 2rem);
+      }
+
+      .lead {
+        margin-top: 0.6rem;
+        color: var(--muted);
+        line-height: 1.7;
+        max-width: 72ch;
+      }
+
+      .panel-grid {
+        display: grid;
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .two {
+        grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+      }
+
+      .three {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, #180c0d, #140a0b);
+        padding: 1rem 1.05rem;
+        border-radius: 16px;
+        box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+      }
+
+      .panel h3 {
+        font-size: 0.98rem;
+        margin-bottom: 0.4rem;
+      }
+
+      .panel p,
+      .panel li {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+        font-size: 0.92rem;
+      }
+
+      .panel ul {
+        margin: 0;
+        padding-left: 1rem;
+      }
+
+      .adapter-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        margin-top: 1rem;
+        font-size: 0.9rem;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+
+      .adapter-table th,
+      .adapter-table td {
+        border-right: 1px solid var(--line-soft);
+        border-bottom: 1px solid var(--line-soft);
+        padding: 0.65rem;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .adapter-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .adapter-table th:last-child,
+      .adapter-table td:last-child {
+        border-right: 0;
+      }
+
+      .adapter-table th {
+        color: var(--accent-2);
+        background: #2a1317;
+        font-weight: 500;
+      }
+
+      .risk-bars {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      .bar {
+        border: 1px solid var(--line);
+        background: #1a0d11;
+        padding: 1rem;
+        border-radius: 16px;
+      }
+
+      .meter {
+        height: 12px;
+        border: 1px solid var(--line);
+        margin: 0.6rem 0;
+        background: #210f13;
+      }
+
+      .meter > span {
+        display: block;
+        height: 100%;
+      }
+
+      .high > span {
+        width: 92%;
+        background: linear-gradient(90deg, #8d3131, var(--danger));
+      }
+
+      .medium > span {
+        width: 67%;
+        background: linear-gradient(90deg, #7d5e20, var(--warn));
+      }
+
+      .low > span {
+        width: 38%;
+        background: linear-gradient(90deg, #81404a, var(--ok));
+      }
+
+      .steps {
+        counter-reset: n;
+      }
+
+      .step {
+        position: relative;
+        padding-left: 2.4rem;
+      }
+
+      .step::before {
+        counter-increment: n;
+        content: "0" counter(n);
+        position: absolute;
+        left: 0;
+        top: 0;
+        color: var(--accent-2);
+        font-weight: 700;
+      }
+
+      .command-block {
+        margin-top: 1rem;
+        border: 1px solid var(--line);
+        background: #130a0b;
+        border-radius: 16px;
+        overflow: hidden;
+      }
+
+      .command-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.7rem;
+        padding: 0.75rem 0.9rem;
+        border-bottom: 1px solid #312024;
+      }
+
+      .command-row:last-child {
+        border-bottom: 0;
+      }
+
+      .command-row code {
+        color: var(--ok);
+        font-size: 0.86rem;
+      }
+
+      .copy {
+        border: 1px solid #744049;
+        background: transparent;
+        color: var(--accent-2);
+        font-family: inherit;
+        font-size: 0.72rem;
+        padding: 0.3rem 0.5rem;
+        cursor: pointer;
+        border-radius: 999px;
+      }
+
+      .copy:hover,
+      .copy:focus-visible {
+        background: rgba(223, 114, 131, 0.1);
+      }
+
+      .deploy-box {
+        margin-top: 1rem;
+        border: 1px dashed #7e4951;
+        background: rgba(223, 114, 131, 0.08);
+        padding: 0.9rem;
+        border-radius: 14px;
+      }
+
+      .deploy-box ol {
+        margin: 0;
+        padding-left: 1.1rem;
+      }
+
+      .deploy-box li {
+        color: var(--muted);
+        margin: 0.35rem 0;
+      }
+
+      footer {
+        margin-top: 1rem;
+        border-top: 1px solid var(--line);
+        padding: 1.6rem 0 2.2rem;
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
+      @media (max-width: 900px) {
+        .hero-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-main {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+      }
+
+      @media (max-width: 760px) {
+        .nav {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap">
+        <div class="session">session: <strong>baymax@localhost</strong> | mode: scan</div>
+        <nav class="nav">
+          <a href="#what">what-it-does</a>
+          <a href="#commands">commands</a>
+          <a href="#risk">risk-engine</a>
+          <a href="#deploy">deploy</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="hero">
+        <div class="window">
+          <div class="window-head">
+            <div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+            <span>baymax v1.0.0 • ai-agent-permission-audit</span>
+          </div>
+          <div class="hero-grid">
+            <div class="hero-main">
+              <span class="badge">LOCAL CLI • SECURITY AUDIT</span>
+              <h1>Permission drift is quiet. Baymax is not.</h1>
+              <p class="hero-copy">
+                Baymax scans AI coding agent configs for dangerous "always allow" settings before they become long-lived
+                trust debt across shell access, filesystem writes, network permissions, and MCP integrations.
+              </p>
+              <div class="cmd-row">
+                <a class="cmd" href="#commands">$ baymax scan .</a>
+                <a class="cmd alt" href="#what">inspect adapters</a>
+              </div>
+            </div>
+            <aside class="hero-side">
+              <pre><span class="prompt">$ baymax scan .</span>
+
+  ╭────────╮   baymax  v1.0.0
+  │  ·  ·  │   AI agent permission scanner
+  │  ────  │   ███████████░░░░░░░░░  57/100
+  ╰────────╯   stay alert
+
+<span class="warn">MED</span>   Bash(cat:*)
+      reads any file
+
+<span class="warn">MED</span>   Bash(git add:*)
+      can stage secrets pre-review
+
+<span class="danger">0 high</span>  ·  <span class="warn">2 medium</span>  ·  0 low
+
+<span class="muted">score: 57/100   runtime: 12ms</span></pre>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="what">
+        <h2>What Baymax actually checks</h2>
+        <p class="lead">
+          It normalizes each agent's config shape into a common risk model, so findings are comparable across teams and
+          tools.
+        </p>
+        <div class="tool-logos">
+          <div class="tool-logo"><span class="icon-chip"><img src="./assets/logos/cursor.svg" alt="Cursor logo" /></span>Cursor</div>
+          <div class="tool-logo"><span class="icon-chip"><img src="./assets/logos/claude-anthropic.svg" alt="Anthropic logo" /></span>Claude</div>
+          <div class="tool-logo"><span class="icon-chip"><img src="https://commons.wikimedia.org/wiki/Special:FilePath/OpenAI_logo_2025_(symbol).svg" alt="OpenAI logo" /></span>Codex CLI</div>
+          <div class="tool-logo"><span class="icon-chip"><img src="./assets/logos/gemini.svg" alt="Google Gemini logo" /></span>Gemini CLI</div>
+          <div class="tool-logo"><span class="icon-chip"><img src="./assets/logos/github-copilot.svg" alt="GitHub Copilot logo" /></span>Copilot</div>
+          <div class="tool-logo"><span class="icon-chip"><img src="https://github.com/Aider-AI.png" alt="Aider logo" /></span>Aider</div>
+        </div>
+
+        <table class="adapter-table">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Signals Baymax scans</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Claude Code</td>
+              <td><code>allowedTools</code>, <code>permissions.allow</code>, MCP server permissions and env-secret exposure</td>
+            </tr>
+            <tr>
+              <td>Cursor</td>
+              <td><code>permissions.allow</code>, <code>trustedPaths</code></td>
+            </tr>
+            <tr>
+              <td>Codex CLI</td>
+              <td><code>approval_policy: auto</code>, <code>full_auto: true</code>, <code>sandbox.enabled: false</code></td>
+            </tr>
+            <tr>
+              <td>Gemini CLI</td>
+              <td><code>trustedFolders</code>, <code>sandboxEnabled: false</code>, MCP server trust</td>
+            </tr>
+            <tr>
+              <td>GitHub Copilot</td>
+              <td><code>permanentlyTrustedDirectories</code>, <code>networkAccess: true</code></td>
+            </tr>
+            <tr>
+              <td>Aider</td>
+              <td><code>yes: true</code>, <code>auto-commits: true</code>, <code>shell: true</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>How it works in practice</h2>
+        <div class="panel-grid three steps">
+          <article class="panel step">
+            <h3>Discover</h3>
+            <p>Find project-level and global config files where persistent trust is stored.</p>
+          </article>
+          <article class="panel step">
+            <h3>Classify</h3>
+            <p>Map each permission to a rule, assign risk, and escalate when persistence + global scope increase impact.</p>
+          </article>
+          <article class="panel step">
+            <h3>Remediate</h3>
+            <p><code>baymax fix</code> opens interactive cleanup: medium/high prechecked, low optional.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="commands">
+        <h2>Core commands</h2>
+        <p class="lead">Install from npm, then run locally or in CI.</p>
+        <div class="command-block">
+          <div class="command-row">
+            <code>npm install -g baymax-cli</code>
+            <button class="copy" data-copy="npm install -g baymax-cli">copy</button>
+          </div>
+          <div class="command-row">
+            <code>baymax scan .</code>
+            <button class="copy" data-copy="baymax scan .">copy</button>
+          </div>
+          <div class="command-row">
+            <code>baymax scan . --depth 3</code>
+            <button class="copy" data-copy="baymax scan . --depth 3">copy</button>
+          </div>
+          <div class="command-row">
+            <code>baymax scan . --json</code>
+            <button class="copy" data-copy="baymax scan . --json">copy</button>
+          </div>
+          <div class="command-row">
+            <code>baymax fix .</code>
+            <button class="copy" data-copy="baymax fix .">copy</button>
+          </div>
+          <div class="command-row">
+            <code>baymax export --md --output ./security-report.md</code>
+            <button class="copy" data-copy="baymax export --md --output ./security-report.md">copy</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="risk">
+        <h2>Risk engine</h2>
+        <p class="lead">Baymax audits capabilities, not intent. It scores what the permission enables.</p>
+        <div class="risk-bars">
+          <article class="bar">
+            <h3 class="danger">HIGH</h3>
+            <div class="meter high"><span></span></div>
+            <p>Immediate concern. Unrestricted shell, sandbox disabled, or auto-approve-all policies.</p>
+          </article>
+          <article class="bar">
+            <h3 class="warn">MEDIUM</h3>
+            <div class="meter medium"><span></span></div>
+            <p>Known risky commands permanently trusted: git, curl, node, python, filesystem/network capabilities.</p>
+          </article>
+          <article class="bar">
+            <h3 class="prompt">LOW</h3>
+            <div class="meter low"><span></span></div>
+            <p>Constrained permissions with reduced blast radius; still tracked to prevent drift.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="deploy">
+        <h2>Deploy this page on GitHub Pages</h2>
+        <div class="deploy-box">
+          <ol>
+            <li>Commit <code>docs/index.html</code> to your default branch.</li>
+            <li>Open repository settings → <code>Pages</code>.</li>
+            <li>Choose <code>Deploy from a branch</code>.</li>
+            <li>Select branch: <code>main</code> (or default), folder: <code>/docs</code>.</li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">Baymax: soft tone, hard boundaries for AI coding agent permissions.</div>
+    </footer>
+
+    <script>
+      const copyButtons = document.querySelectorAll(".copy");
+      copyButtons.forEach((button) => {
+        button.addEventListener("click", async () => {
+          const cmd = button.getAttribute("data-copy");
+          if (!cmd) return;
+          try {
+            await navigator.clipboard.writeText(cmd);
+            const original = button.textContent;
+            button.textContent = "copied";
+            setTimeout(() => {
+              button.textContent = original;
+            }, 900);
+          } catch {
+            button.textContent = "failed";
+            setTimeout(() => {
+              button.textContent = "copy";
+            }, 900);
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
